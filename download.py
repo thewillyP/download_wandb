@@ -1,6 +1,7 @@
 import os
 import wandb
 import psycopg2
+import psycopg2.extras
 import pandas as pd
 import json
 from datetime import datetime
