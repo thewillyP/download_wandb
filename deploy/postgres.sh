@@ -5,8 +5,8 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=4G
 #SBATCH --time=06:00:00
-#SBATCH --output="/scratch/wlp9800/logs/%x-%j.out"
-#SBATCH --error="/scratch/wlp9800/logs/%x-%j.err"
+#SBATCH --output="/vast/wlp9800/logs/%x-%j.out"
+#SBATCH --error="/vast/wlp9800/logs/%x-%j.err"
 
 
 source ~/.secrets/env.sh

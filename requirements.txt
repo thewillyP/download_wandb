@@ -1,3 +1,4 @@
 pandas
 wandb
 psycopg2-binary
+pyarrow

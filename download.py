@@ -160,28 +160,27 @@ def store_run_data(run, conn_params):
 
             # Fetch history from parquet file
             try:
-                # Initialize W&B run context to use artifacts
-                wandb_run = wandb.init(project=run.project, entity=run.entity, id=run.id, resume="must")
+                # Initialize a new, empty W&B run in offline mode
+                wandb_run = wandb.init(mode="offline")
                 artifact_name = f"{run.entity}/{run.project}/run-{run.id}-history:v0"
                 artifact = wandb_run.use_artifact(artifact_name, type='wandb-history')
 
                 # Download artifact to /dump
                 artifact_dir = artifact.download(root="/dump")
 
-                # Find the parquet file in the /dump directory
+                # Find the parquet file in the artifact directory
                 parquet_files = [f for f in os.listdir(artifact_dir) if f.endswith('.parquet')]
                 if not parquet_files:
                     raise FileNotFoundError("No parquet file found in artifact directory")
 
                 parquet_path = os.path.join(artifact_dir, parquet_files[0])
-                history_df = pd.read_parquet(parquet_path)
+                history_df = pd.read_parquet(parquet_path, engine='pyarrow')
                 logger.info(f"[{thread_name}] Loaded history from parquet for run {run.id} in /dump")
 
                 # Finish the W&B run context
                 wandb_run.finish()
             except Exception as e:
-                logger.warning(
-                    f"[{thread_name}] Failed to load parquet for run {run.id}: {e}. Falling back to scan_history.")
+                logger.warning(f"[{thread_name}] Failed to load parquet for run {run.id}: {e}. Falling back to scan_history.")
                 # Fallback to scan_history for running runs or if artifact is unavailable
                 history_data = run.scan_history()
                 history_df = pd.DataFrame(history_data)

@@ -1,5 +1,11 @@
 #!/bin/bash
 set -e
+# Set WANDB environment variables
+export WANDB_DIR=/wandb_data
+export WANDB_CACHE_DIR=/wandb_data/.cache/wandb
+export WANDB_CONFIG_DIR=/wandb_data/.config/wandb
+export WANDB_DATA_DIR=/wandb_data/.cache/wandb-data/
+export WANDB_ARTIFACT_DIR=/wandb_data/.artifacts
 
 source ~/.secrets/env.sh
 
