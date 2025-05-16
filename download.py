@@ -160,25 +160,28 @@ def store_run_data(run, conn_params):
 
             # Fetch history from parquet file
             try:
-                # Initialize a new, empty W&B run in offline mode
-                wandb_run = wandb.init(mode="offline")
+                # Initialize W&B API
+                api = wandb.Api()
                 artifact_name = f"{run.entity}/{run.project}/run-{run.id}-history:v0"
-                artifact = wandb_run.use_artifact(artifact_name, type='wandb-history')
+                artifact = api.artifact(artifact_name, type='wandb-history')
 
-                # Download artifact to /dump
-                artifact_dir = artifact.download(root="/dump")
+                # Set download directory to /dump/<artifact_name>
+                download_dir = "/dump"
+                artifact_dir = os.path.join(download_dir, artifact.name)
+                os.makedirs(artifact_dir, exist_ok=True)
+
+                # Download artifact
+                artifact.download(root=artifact_dir)
 
                 # Find the parquet file in the artifact directory
                 parquet_files = [f for f in os.listdir(artifact_dir) if f.endswith('.parquet')]
                 if not parquet_files:
-                    raise FileNotFoundError("No parquet file found in artifact directory")
+                    raise FileNotFoundError(f"No parquet file found in {artifact_dir}")
 
                 parquet_path = os.path.join(artifact_dir, parquet_files[0])
                 history_df = pd.read_parquet(parquet_path, engine='pyarrow')
-                logger.info(f"[{thread_name}] Loaded history from parquet for run {run.id} in /dump")
+                logger.info(f"[{thread_name}] Loaded history from parquet for run {run.id} in {artifact_dir}")
 
-                # Finish the W&B run context
-                wandb_run.finish()
             except Exception as e:
                 logger.warning(f"[{thread_name}] Failed to load parquet for run {run.id}: {e}. Falling back to scan_history.")
                 # Fallback to scan_history for running runs or if artifact is unavailable
