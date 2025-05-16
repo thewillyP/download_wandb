@@ -76,14 +76,6 @@ def create_tables(conn):
         PRIMARY KEY (run_id, step, metric_name),
         FOREIGN KEY (run_id, step) REFERENCES run_history(run_id, step)
     );
-
-    -- Create indexes
-    CREATE INDEX IF NOT EXISTS idx_runs_group_id ON runs(group_id);
-    CREATE INDEX IF NOT EXISTS idx_run_config_run_id ON run_config(run_id);
-    CREATE INDEX IF NOT EXISTS idx_run_config_key ON run_config(config_key);
-    CREATE INDEX IF NOT EXISTS idx_summary_metrics_run_id ON summary_metrics(run_id);
-    CREATE INDEX IF NOT EXISTS idx_run_history_run_id ON run_history(run_id);
-    CREATE INDEX IF NOT EXISTS idx_history_metrics_run_id_step ON history_metrics(run_id, step);
     """
     try:
         with conn.cursor() as cur:
@@ -134,29 +126,31 @@ def store_run_data(run, conn_params):
                 run.created_at
             ))
 
-            # Insert config key-value pairs
-            for key, value in run.config.items():
-                cur.execute("""
+            # Insert config key-value pairs (batch for efficiency)
+            config_data = [(run.id, key, json.dumps(value)) for key, value in run.config.items()]
+            if config_data:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
                     INSERT INTO run_config (run_id, config_key, config_value)
-                    VALUES (%s, %s, %s)
+                    VALUES %s
                     ON CONFLICT (run_id, config_key) DO NOTHING
-                """, (
-                    run.id,
-                    key,
-                    json.dumps(value)
-                ))
+                    """,
+                    config_data
+                )
 
-            # Insert summary metrics
-            for metric_name, metric_value in run.summary.items():
-                cur.execute("""
+            # Insert summary metrics (batch for efficiency)
+            summary_data = [(run.id, metric_name, json.dumps(metric_value)) for metric_name, metric_value in run.summary.items()]
+            if summary_data:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
                     INSERT INTO summary_metrics (run_id, metric_name, metric_value)
-                    VALUES (%s, %s, %s)
+                    VALUES %s
                     ON CONFLICT (run_id, metric_name) DO NOTHING
-                """, (
-                    run.id,
-                    metric_name,
-                    json.dumps(metric_value)
-                ))
+                    """,
+                    summary_data
+                )
 
             # Fetch history from parquet file
             try:
@@ -176,7 +170,7 @@ def store_run_data(run, conn_params):
                 # Find the parquet file in the artifact directory
                 parquet_files = [f for f in os.listdir(artifact_dir) if f.endswith('.parquet')]
                 if not parquet_files:
-                    raise FileNotFoundError(f"No parquet file found in {artifact_dir}")
+                    raise FileNotFoundError(f"No parquet file gefunden in {artifact_dir}")
 
                 parquet_path = os.path.join(artifact_dir, parquet_files[0])
                 history_df = pd.read_parquet(parquet_path, engine='pyarrow')
@@ -192,36 +186,42 @@ def store_run_data(run, conn_params):
                     conn.commit()
                     return
 
-            # Process history DataFrame
+            # Prepare data for bulk insert into run_history
+            history_data = []
             for index, row in history_df.iterrows():
-                metrics = {k: v for k, v in row.items() if pd.notna(v)}
                 timestamp = row.get('_timestamp', None)
                 if timestamp:
                     timestamp = datetime.fromtimestamp(timestamp)
+                history_data.append((run.id, index, timestamp))
 
-                # Insert history step
-                cur.execute("""
+            if history_data:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
                     INSERT INTO run_history (run_id, step, timestamp)
-                    VALUES (%s, %s, %s)
+                    VALUES %s
                     ON CONFLICT (run_id, step) DO NOTHING
-                """, (
-                    run.id,
-                    index,
-                    timestamp
-                ))
+                    """,
+                    history_data
+                )
 
-                # Insert history metrics
+            # Prepare data for bulk insert into history_metrics
+            metrics_data = []
+            for index, row in history_df.iterrows():
+                metrics = {k: v for k, v in row.items() if pd.notna(v)}
                 for metric_name, metric_value in metrics.items():
-                    cur.execute("""
-                        INSERT INTO history_metrics (run_id, step, metric_name, metric_value)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT (run_id, step, metric_name) DO NOTHING
-                    """, (
-                        run.id,
-                        index,
-                        metric_name,
-                        json.dumps(metric_value)
-                    ))
+                    metrics_data.append((run.id, index, metric_name, json.dumps(metric_value)))
+
+            if metrics_data:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO history_metrics (run_id, step, metric_name, metric_value)
+                    VALUES %s
+                    ON CONFLICT (run_id, step, metric_name) DO NOTHING
+                    """,
+                    metrics_data
+                )
 
             conn.commit()
         logger.info(f"[{thread_name}] Stored data for run {run.id}")
