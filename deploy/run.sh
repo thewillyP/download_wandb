@@ -10,18 +10,22 @@
 #SBATCH --error="/vast/wlp9800/logs/%x-%A-%a.err"
 
 set -e
-if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $0 <project> <group_id>"
+
+if [ -z "$PROJECT" ]; then
+    echo "Error: WANDB_SWEEP_ID environment variable must be set!"
     exit 1
 fi
 
-PROJECT="$1"
-GROUP_ID="$2"
+if [ -z "$GROUP_ID" ]; then
+    echo "Error: VARIANT environment variable must be set!"
+    exit 1
+fi
 
 source ~/.secrets/env.sh
 
-singularity run --nv --containall --cleanenv --writable-tmpfs \
+singularity run --containall --cleanenv --writable-tmpfs \
   --bind /home/${USER}/.secrets/env.sh \
   --bind /scratch/${USER}/wandb:/wandb_data \
   --bind /scratch/${USER}/space:/dump \
-  /scratch/${USER}/images/wandb_download.sif $PROJECT $GROUP_ID
+  /scratch/${USER}/images/download_wandb.sif $PROJECT $GROUP_ID
+

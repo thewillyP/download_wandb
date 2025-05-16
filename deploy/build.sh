@@ -11,7 +11,7 @@
 #SBATCH --mail-user=wlp9800@nyu.edu
 
 
-IMAGE=wandb_download
+IMAGE=download_wandb
 DOCKER_URL="docker://thewillyp/${IMAGE}"
 
 # Build the Singularity image

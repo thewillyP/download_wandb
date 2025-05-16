@@ -158,10 +158,10 @@ def store_run_data(run, conn_params):
                     json.dumps(metric_value)
                 ))
 
-            # Fetch and insert history
-            history_df = run.scan_history()
-            for index, row in history_df.iterrows():
-                metrics = {k: v for k, v in row.items() if pd.notna(v)}
+            # Fetch and insert history using scan_history
+            history = run.scan_history()
+            for step, row in enumerate(history):
+                metrics = {k: v for k, v in row.items() if v is not None}
                 timestamp = row.get('_timestamp', None)
                 if timestamp:
                     timestamp = datetime.fromtimestamp(timestamp)
@@ -173,7 +173,7 @@ def store_run_data(run, conn_params):
                     ON CONFLICT (run_id, step) DO NOTHING
                 """, (
                     run.id,
-                    index,
+                    step,
                     timestamp
                 ))
 
@@ -185,7 +185,7 @@ def store_run_data(run, conn_params):
                         ON CONFLICT (run_id, step, metric_name) DO NOTHING
                     """, (
                         run.id,
-                        index,
+                        step,
                         metric_name,
                         json.dumps(metric_value)
                     ))
