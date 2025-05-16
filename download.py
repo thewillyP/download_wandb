@@ -158,10 +158,41 @@ def store_run_data(run, conn_params):
                     json.dumps(metric_value)
                 ))
 
-            # Fetch and insert history using scan_history
-            history = run.scan_history()
-            for step, row in enumerate(history):
-                metrics = {k: v for k, v in row.items() if v is not None}
+            # Fetch history from parquet file
+            try:
+                # Initialize W&B run context to use artifacts
+                wandb_run = wandb.init(project=run.project, entity=run.entity, id=run.id, resume="must")
+                artifact_name = f"{run.entity}/{run.project}/run-{run.id}-history:v0"
+                artifact = wandb_run.use_artifact(artifact_name, type='wandb-history')
+
+                # Download artifact to /dump
+                artifact_dir = artifact.download(root="/dump")
+
+                # Find the parquet file in the /dump directory
+                parquet_files = [f for f in os.listdir(artifact_dir) if f.endswith('.parquet')]
+                if not parquet_files:
+                    raise FileNotFoundError("No parquet file found in artifact directory")
+
+                parquet_path = os.path.join(artifact_dir, parquet_files[0])
+                history_df = pd.read_parquet(parquet_path)
+                logger.info(f"[{thread_name}] Loaded history from parquet for run {run.id} in /dump")
+
+                # Finish the W&B run context
+                wandb_run.finish()
+            except Exception as e:
+                logger.warning(
+                    f"[{thread_name}] Failed to load parquet for run {run.id}: {e}. Falling back to scan_history.")
+                # Fallback to scan_history for running runs or if artifact is unavailable
+                history_data = run.scan_history()
+                history_df = pd.DataFrame(history_data)
+                if history_df.empty:
+                    logger.warning(f"[{thread_name}] No history data available for run {run.id}")
+                    conn.commit()
+                    return
+
+            # Process history DataFrame
+            for index, row in history_df.iterrows():
+                metrics = {k: v for k, v in row.items() if pd.notna(v)}
                 timestamp = row.get('_timestamp', None)
                 if timestamp:
                     timestamp = datetime.fromtimestamp(timestamp)
@@ -173,7 +204,7 @@ def store_run_data(run, conn_params):
                     ON CONFLICT (run_id, step) DO NOTHING
                 """, (
                     run.id,
-                    step,
+                    index,
                     timestamp
                 ))
 
@@ -185,7 +216,7 @@ def store_run_data(run, conn_params):
                         ON CONFLICT (run_id, step, metric_name) DO NOTHING
                     """, (
                         run.id,
-                        step,
+                        index,
                         metric_name,
                         json.dumps(metric_value)
                     ))
