@@ -3,7 +3,7 @@
 #SBATCH --ntasks=1
 #SBATCH --mem=14G
 #SBATCH --time=06:00:00
-#SBATCH --job-name=oho_experiments
+#SBATCH --job-name=download_wandb
 #SBATCH --gres=gpu:0
 #SBATCH --cpus-per-task=8
 #SBATCH --output="/vast/wlp9800/logs/%x-%A-%a.out"
